@@ -1,534 +1,783 @@
 /**
- * PDF Report Generator
- * Generates a multi-page stats report using jsPDF
- * Style matches the dark theme from the original PDF
+ * PDF Report Generator — v2 Professional
+ * Dark cinematic theme · jsPDF · A4 Landscape
+ * Drop-in replacement: same exports, same data schema.
  */
 
 const W = 297  // A4 landscape width mm
 const H = 210  // A4 landscape height mm
 
-const COLORS = {
-  bg: '#111318',
-  surface: '#1a1d26',
-  cyan: '#00e5cc',
-  cyan2: '#40c4ff',
-  magenta: '#e040fb',
-  green: '#4caf50',
-  text: '#e8eaf0',
-  muted: '#7b82a0',
-  border: '#2a2f3d',
-  white: '#ffffff',
+// ─── PALETTE ──────────────────────────────────────────────────────────────────
+const C = {
+  bg:       '#0d0f14',
+  surface:  '#161922',
+  surface2: '#1c2030',
+  surface3: '#222840',
+  cyan:     '#00e5cc',
+  cyan2:    '#40c4ff',
+  magenta:  '#e040fb',
+  green:    '#4caf50',
+  text:     '#e8eaf0',
+  muted:    '#616a8a',
+  border:   '#252a3a',
+  positive: '#00c896',
+  negative: '#ff5252',
 }
 
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return [r, g, b]
+// ─── COLOR UTILS ──────────────────────────────────────────────────────────────
+function rgb(hex) {
+  return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
+}
+function fill(doc, hex)  { doc.setFillColor(...rgb(hex)) }
+function txt(doc, hex)   { doc.setTextColor(...rgb(hex)) }
+function draw(doc, hex)  { doc.setDrawColor(...rgb(hex)) }
+
+// Blend a hex color toward black at a given ratio (0=original, 1=black)
+function darken(hex, ratio) {
+  const [r,g,b] = rgb(hex)
+  return [Math.round(r*(1-ratio)), Math.round(g*(1-ratio)), Math.round(b*(1-ratio))]
 }
 
-function setFill(doc, hex) { doc.setFillColor(...hexToRgb(hex)) }
-function setTxt(doc, hex) { doc.setTextColor(...hexToRgb(hex)) }
-function setDraw(doc, hex) { doc.setDrawColor(...hexToRgb(hex)) }
+// ─── BASE PRIMITIVES ──────────────────────────────────────────────────────────
 
 function bgPage(doc) {
-  setFill(doc, COLORS.bg)
+  fill(doc, C.bg)
   doc.rect(0, 0, W, H, 'F')
-}
 
-function header(doc, brandName, brandColor, weekLabel) {
-  // Top bar
-  setFill(doc, COLORS.surface)
-  doc.roundedRect(8, 6, W - 16, 18, 2, 2, 'F')
-
-  setTxt(doc, brandColor)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(14)
-  doc.text(brandName.toUpperCase(), 16, 18)
-
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.text('ESTADÍSTICAS WEB Y REDES SOCIALES', W / 2, 18, { align: 'center' })
-
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
-  doc.text(weekLabel || '', W - 16, 18, { align: 'right' })
-}
-
-function card(doc, x, y, w, h, title, titleColor) {
-  setFill(doc, COLORS.surface)
-  setDraw(doc, COLORS.border)
-  doc.roundedRect(x, y, w, h, 3, 3, 'FD')
-
-  if (title) {
-    setTxt(doc, titleColor || COLORS.cyan)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.text(title.toUpperCase(), x + 6, y + 8)
-
-    setDraw(doc, COLORS.border)
-    doc.line(x + 4, y + 10, x + w - 4, y + 10)
+  // Subtle dot-grid pattern
+  draw(doc, C.border)
+  doc.setLineWidth(0.08)
+  for (let x = 15; x < W; x += 18) {
+    for (let y = 15; y < H; y += 18) {
+      doc.circle(x, y, 0.4, 'F') // tiny filled dot, not circle stroke
+    }
   }
 }
 
-function vsChip(doc, x, y, current, previous) {
-  const trend = Number(current) >= Number(previous) ? '▲' : '▼'
-  const trendColor = Number(current) >= Number(previous) ? COLORS.cyan : '#ff5252'
-  const val = `${current} vs sp ${previous}`
+/**
+ * Page header bar (height = 26mm from top)
+ */
+function pageHeader(doc, brandName, brandColor, weekLabel, sectionLabel) {
+  fill(doc, C.surface)
+  doc.rect(0, 0, W, 26, 'F')
 
-  setFill(doc, COLORS.cyan)
-  doc.roundedRect(x, y, 60, 8, 4, 4, 'F')
-  setTxt(doc, '#0a0e14')
+  // Left accent bar
+  fill(doc, brandColor)
+  doc.rect(0, 0, 5, 26, 'F')
+
+  // Brand name
+  txt(doc, brandColor)
   doc.setFont('helvetica', 'bold')
+  doc.setFontSize(12)
+  doc.text(brandName.toUpperCase(), 13, 11)
+
+  // Section label below brand
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
-  doc.text(val, x + 30, y + 5.5, { align: 'center' })
+  doc.text(sectionLabel || 'INFORME DE ESTADÍSTICAS', 13, 21)
+
+  // Center: report type
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  doc.text('ESTADÍSTICAS WEB Y REDES SOCIALES', W / 2, 14, { align: 'center' })
+
+  // Right: week label
+  txt(doc, C.text)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8.5)
+  doc.text(weekLabel || '', W - 10, 11, { align: 'right' })
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.5)
+
+  // Bottom separator with accent bleed
+  draw(doc, brandColor)
+  doc.setLineWidth(0.6)
+  doc.line(0, 26, W, 26)
 }
 
-function barChart(doc, x, y, w, h, data, color) {
-  const maxVal = Math.max(...data.map(d => Number(d.value) || 0), 1)
-  const barW = (w - 8) / data.length - 3
-  let bx = x + 4
-
-  // Axis
-  setDraw(doc, COLORS.border)
+/**
+ * Page footer (bottom 10mm)
+ */
+function pageFooter(doc, leftText, rightText, pageNum, totalPages) {
+  draw(doc, C.border)
   doc.setLineWidth(0.3)
-  doc.line(x + 2, y + h - 10, x + w - 2, y + h - 10)
+  doc.line(8, H - 10, W - 8, H - 10)
+
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6)
+
+  if (leftText)  doc.text(leftText, 10, H - 4.5)
+  if (pageNum !== undefined) {
+    const label = totalPages ? `— ${pageNum} / ${totalPages} —` : `— ${pageNum} —`
+    doc.text(label, W / 2, H - 4.5, { align: 'center' })
+  }
+  if (rightText) doc.text(rightText, W - 10, H - 4.5, { align: 'right' })
+}
+
+/**
+ * Panel card (background container)
+ */
+function panel(doc, x, y, w, h) {
+  fill(doc, C.surface)
+  draw(doc, C.border)
+  doc.setLineWidth(0.25)
+  doc.roundedRect(x, y, w, h, 2, 2, 'FD')
+}
+
+/**
+ * Section title bar inside a panel
+ */
+function sectionBar(doc, x, y, w, title, accentColor) {
+  fill(doc, C.surface2)
+  doc.roundedRect(x, y, w, 8, 1, 1, 'F')
+
+  // Left accent rect
+  fill(doc, accentColor)
+  doc.rect(x, y, 3, 8, 'F')
+
+  txt(doc, accentColor)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(6.5)
+  doc.text(title.toUpperCase(), x + 7, y + 5.5)
+}
+
+// ─── KPI CARD ─────────────────────────────────────────────────────────────────
+/**
+ * Full-featured KPI card with accent top bar, large value, and delta badge.
+ * @param {object} doc
+ * @param {number} x, y, w, h
+ * @param {string} title
+ * @param {number|string} value     Current period value
+ * @param {number|string} prevValue Previous period value (for delta)
+ * @param {string} accentColor
+ */
+function kpiCard(doc, x, y, w, h, title, value, prevValue, accentColor) {
+  panel(doc, x, y, w, h)
+
+  // Top accent stripe
+  fill(doc, accentColor)
+  doc.roundedRect(x, y, w, 3.5, 1, 1, 'F')
+
+  // Title
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.5)
+  doc.text(title.toUpperCase(), x + w / 2, y + 11, { align: 'center' })
+
+  // Main value
+  const curr = Number(value) || 0
+  const prev = Number(prevValue) || 0
+  txt(doc, C.text)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(26)
+  doc.text(curr.toLocaleString('es-CL'), x + w / 2, y + h - 13, { align: 'center' })
+
+  // Delta badge
+  const delta   = curr - prev
+  const pct     = prev > 0 ? Math.round((delta / prev) * 100) : 0
+  const isUp    = delta >= 0
+  const dColor  = prev === 0 ? C.muted : (isUp ? C.positive : C.negative)
+  const arrow   = isUp ? '▲' : '▼'
+  const sign    = delta >= 0 ? '+' : ''
+  const deltaTxt = `${arrow}  ${sign}${delta.toLocaleString('es-CL')}  (${sign}${pct}%)`
+
+  // Badge background
+  const badgeW = Math.min(w - 10, 68)
+  const bx = x + (w - badgeW) / 2
+  fill(doc, C.surface2)
+  doc.roundedRect(bx, y + h - 10, badgeW, 7, 3, 3, 'F')
+
+  txt(doc, dColor)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(6.5)
+  doc.text(deltaTxt, x + w / 2, y + h - 4.8, { align: 'center' })
+
+  // "vs sem. anterior" sublabel
+  if (prev > 0) {
+    txt(doc, C.muted)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(5.2)
+    doc.text(`sem. anterior: ${prev.toLocaleString('es-CL')}`, x + w / 2, y + h - 0.5, { align: 'center' })
+  }
+}
+
+// ─── BAR CHART (VERTICAL) ─────────────────────────────────────────────────────
+function barChart(doc, x, y, w, h, data, color) {
+  if (!data || data.length === 0) return
+  const maxVal = Math.max(...data.map(d => Number(d.value) || 0), 1)
+  const chartH = h - 14   // reserve bottom for labels
+  const chartTop = y
+  const baseY = chartTop + chartH
+
+  // Horizontal grid lines (4 levels)
+  const gridCount = 4
+  for (let i = 1; i <= gridCount; i++) {
+    const gy = baseY - (chartH / gridCount) * i
+    draw(doc, C.border)
+    doc.setLineWidth(0.15)
+    doc.line(x, gy, x + w, gy)
+    const gridVal = Math.round((maxVal / gridCount) * i)
+    txt(doc, C.muted)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(4)
+    doc.text(gridVal >= 1000 ? `${(gridVal/1000).toFixed(1)}k` : String(gridVal), x - 1, gy + 1, { align: 'right' })
+  }
+
+  // Baseline
+  draw(doc, C.muted)
+  doc.setLineWidth(0.3)
+  doc.line(x, baseY, x + w, baseY)
+
+  const gutter = 2.5
+  const totalGutters = (data.length - 1) * gutter
+  const barW = (w - totalGutters) / data.length
+  let bx = x
 
   data.forEach(d => {
-    const barH = ((Number(d.value) || 0) / maxVal) * (h - 20)
-    const by = y + h - 10 - barH
+    const val = Number(d.value) || 0
+    const barH = (val / maxVal) * chartH
+    const by = baseY - barH
 
-    setFill(doc, color)
-    doc.roundedRect(bx, by, barW, barH, 1, 1, 'F')
+    // Bar
+    fill(doc, color)
+    doc.roundedRect(bx, by, barW, barH, 0.8, 0.8, 'F')
+
+    // Slightly lighter top cap
+    const capH = Math.min(barH, 2.5)
+    doc.setFillColor(...darken(color, -0.15 < 0 ? 0 : -0.15))
+    fill(doc, color) // reset, jsPDF doesn't support lighten easily
+
+    // Value label above bar
+    if (val > 0) {
+      txt(doc, C.text)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(4.5)
+      const valLabel = val >= 1000 ? `${(val/1000).toFixed(1)}k` : String(val)
+      doc.text(valLabel, bx + barW / 2, by - 1.2, { align: 'center' })
+    }
+
+    // X-axis label
+    txt(doc, C.muted)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(4.8)
+    const lbl = d.label.length > 10 ? d.label.slice(0, 10) + '…' : d.label
+    doc.text(lbl, bx + barW / 2, baseY + 5.5, { align: 'center' })
+
+    bx += barW + gutter
+  })
+}
+
+// ─── HORIZONTAL BAR CHART ─────────────────────────────────────────────────────
+function hBarChart(doc, x, y, w, h, data, color) {
+  if (!data || data.length === 0) return
+  const maxVal = Math.max(...data.map(d => Number(d.value) || 0), 1)
+  const labelW = 58
+  const barAreaW = w - labelW - 12
+  const rowH = h / data.length
+
+  data.forEach((d, i) => {
+    const val = Number(d.value) || 0
+    const barW = (val / maxVal) * barAreaW
+    const by = y + i * rowH
+
+    // Alternating row bg
+    fill(doc, i % 2 === 0 ? C.surface2 : C.surface)
+    doc.rect(x, by, w, rowH, 'F')
+
+    // Bar
+    fill(doc, color)
+    const BAR_PAD = 1.5
+    doc.roundedRect(x + labelW, by + BAR_PAD, barW, rowH - BAR_PAD * 2, 0.6, 0.6, 'F')
 
     // Label
-    setTxt(doc, COLORS.muted)
+    txt(doc, C.muted)
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(5)
-    const label = d.label.length > 8 ? d.label.slice(0, 8) + '…' : d.label
-    doc.text(label, bx + barW / 2, y + h - 5, { align: 'center' })
+    doc.setFontSize(5.2)
+    const lbl = d.label.length > 32 ? d.label.slice(0, 32) + '…' : d.label
+    doc.text(lbl, x + labelW - 2, by + rowH / 2 + 1.8, { align: 'right' })
 
-    bx += barW + 3
+    // Value
+    txt(doc, C.text)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(5.2)
+    const valLabel = val >= 1000 ? `${(val/1000).toFixed(1)}k` : String(val)
+    doc.text(valLabel, x + labelW + barW + 2, by + rowH / 2 + 1.8)
   })
 }
 
-function pieChart(doc, cx, cy, r, pct, color1, color2, label1, label2) {
-  const a1 = (pct / 100) * 2 * Math.PI
-  // Simple two-slice pie approximation using filled arcs
-  // jsPDF doesn't have arc, so we draw as colored rects (simplified)
-  setFill(doc, color1)
-  doc.circle(cx, cy, r, 'F')
+// ─── TOP POSTS ROW ────────────────────────────────────────────────────────────
+function topPostsRow(doc, x, y, w, h, posts, accentColor) {
+  if (!posts || posts.length === 0) return
+  const count = posts.length
+  const gutter = 4
+  const cardW = (w - gutter * (count - 1)) / count
 
-  // Slice 2 approximation
-  if (pct < 100) {
-    setFill(doc, color2)
-    const sliceRatio = (100 - pct) / 100
-    doc.circle(cx, cy, r * Math.sqrt(sliceRatio), 'F')
+  posts.forEach((post, i) => {
+    const px = x + i * (cardW + gutter)
+
+    fill(doc, C.surface2)
+    draw(doc, C.border)
+    doc.setLineWidth(0.2)
+    doc.roundedRect(px, y, cardW, h, 2, 2, 'FD')
+
+    // Rank badge
+    fill(doc, accentColor)
+    doc.roundedRect(px + 4, y + 4, 10, 7, 1, 1, 'F')
+    txt(doc, '#0a0e14')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(5.5)
+    doc.text(`#${i + 1}`, px + 9, y + 9.5, { align: 'center' })
+
+    // Views label
+    txt(doc, C.muted)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6)
+    doc.text('VISUALIZACIONES', px + cardW / 2, y + 14, { align: 'center' })
+
+    // Views number
+    const views = Number(post.vistas) || 0
+    txt(doc, C.text)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.text(views >= 1000 ? `${(views/1000).toFixed(1)}k` : String(views), px + cardW / 2, y + h - 14, { align: 'center' })
+
+    // Accent bottom stripe
+    fill(doc, accentColor)
+    doc.roundedRect(px, y + h - 3.5, cardW, 3.5, 1, 1, 'F')
+
+    // Date in stripe
+    txt(doc, '#0a0e14')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(5.5)
+    doc.text(post.fecha || '—', px + cardW / 2, y + h - 0.5, { align: 'center' })
+  })
+}
+
+// ─── COVER PAGE ───────────────────────────────────────────────────────────────
+export function buildCoverPage(doc, weekLabel) {
+  fill(doc, C.bg)
+  doc.rect(0, 0, W, H, 'F')
+
+  // Decorative diagonal lines top-right corner
+  draw(doc, C.border)
+  doc.setLineWidth(0.15)
+  for (let i = 0; i < 16; i++) {
+    doc.line(W - i * 20, 0, W, i * 14)
   }
 
-  // Labels
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
-  doc.text(`${label1} ${pct}%`, cx - r - 2, cy + r + 5)
-  doc.text(`${label2} ${100 - pct}%`, cx + 2, cy + r + 5)
-}
+  // Client color strips at bottom (3 stripes)
+  const SH = 8
+  const SW = W / 3
+  fill(doc, C.cyan);   doc.rect(0,      H - SH, SW,  SH, 'F')
+  fill(doc, C.cyan2);  doc.rect(SW,     H - SH, SW,  SH, 'F')
+  fill(doc, C.green);  doc.rect(SW * 2, H - SH, SW,  SH, 'F')
 
-function hBarChart(doc, x, y, w, h, data, color) {
-  const maxVal = Math.max(...data.map(d => Number(d.value) || 0), 1)
-  const rowH = (h - 4) / data.length - 1
-  let by = y + 2
-
-  data.forEach(d => {
-    const barW = ((Number(d.value) || 0) / maxVal) * (w - 50)
-    setFill(doc, color)
-    doc.roundedRect(x + 45, by, barW, rowH - 2, 0.5, 0.5, 'F')
-
-    setTxt(doc, COLORS.muted)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(5.5)
-    const label = d.label.length > 30 ? d.label.slice(0, 30) + '…' : d.label
-    doc.text(label, x + 43, by + rowH / 2 + 1, { align: 'right' })
-
-    setTxt(doc, COLORS.text)
-    doc.setFontSize(5.5)
-    doc.text(String(d.value || 0), x + 47 + barW, by + rowH / 2 + 1)
-
-    by += rowH + 1
+  const clients = ['ASEMAFOR', 'INNOVARIEGO', 'ECONEGOCIOS']
+  const cColors  = ['#0a0e14', '#0a0e14', '#0a0e14']
+  clients.forEach((name, i) => {
+    txt(doc, cColors[i])
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.5)
+    doc.text(name, SW * i + SW / 2, H - SH + 5.5, { align: 'center' })
   })
+
+  // Central card
+  const CX = W / 2
+  const CY = H / 2
+  const CW = 176
+  const CH = 86
+  fill(doc, C.surface)
+  doc.roundedRect(CX - CW / 2, CY - CH / 2, CW, CH, 4, 4, 'F')
+
+  // Top accent
+  fill(doc, C.cyan)
+  doc.roundedRect(CX - CW / 2, CY - CH / 2, CW, 4, 2, 2, 'F')
+
+  // Overprint subtle left glow
+  fill(doc, C.surface2)
+  doc.roundedRect(CX - CW / 2, CY - CH / 2 + 4, 4, CH - 4, 0, 0, 'F')
+
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.text('INFORME DE ESTADÍSTICAS DIGITALES', CX, CY - CH / 2 + 16, { align: 'center' })
+
+  txt(doc, C.text)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(24)
+  doc.text('REPORTE SEMANAL', CX, CY - CH / 2 + 34, { align: 'center' })
+
+  // Divider
+  draw(doc, C.border)
+  doc.setLineWidth(0.5)
+  doc.line(CX - 46, CY - CH / 2 + 40, CX + 46, CY - CH / 2 + 40)
+
+  txt(doc, C.cyan)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.text(weekLabel || '', CX, CY - CH / 2 + 52, { align: 'center' })
+
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  doc.text('Asemafor · Innovariego · Econegocios', CX, CY - CH / 2 + 64, { align: 'center' })
+
+  // Generated date
+  const today = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })
+  txt(doc, C.muted)
+  doc.setFontSize(6)
+  doc.text(`Generado el ${today}`, CX, CY - CH / 2 + 76, { align: 'center' })
 }
 
-// ─── PAGE BUILDERS ────────────────────────────────────────────────────────────
-
+// ─── ASEMAFOR WEB ─────────────────────────────────────────────────────────────
 export function buildAsemaforWebPage(doc, data, weekLabel) {
   bgPage(doc)
-  header(doc, 'ASEMAFOR', COLORS.cyan, weekLabel)
+  pageHeader(doc, 'Asemafor', C.cyan, weekLabel, 'WEB ANALYTICS')
 
-  // Visitantes card
-  card(doc, 8, 28, 85, 44, 'Visitantes Web', COLORS.cyan)
-  setTxt(doc, COLORS.text)
+  const TY = 30  // top of content area
+  const ROW1_H = 44
+  const ROW2_Y = TY + ROW1_H + 4
+  const ROW2_H = 66
+  const ROW3_Y = ROW2_Y + ROW2_H + 4
+  const ROW3_H = H - ROW3_Y - 14
+
+  // ── ROW 1: KPI + Period info + Dispositivos
+  kpiCard(doc, 8, TY, 72, ROW1_H, 'Visitantes Web',
+    data.web.visitantes, data.web.visitantesSP, C.cyan)
+
+  // Period info card (simple)
+  panel(doc, 84, TY, 68, ROW1_H)
+  sectionBar(doc, 84, TY, 68, 'Período', C.cyan)
+  txt(doc, C.muted)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6.5)
+  doc.text('Semana analizada:', 90, TY + 18)
+  txt(doc, C.text)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(22)
-  doc.text(String(data.web.visitantes || 0), 50, 52, { align: 'center' })
-  vsChip(doc, 14, 58, data.web.visitantes || 0, data.web.visitantesSP || 0)
+  doc.setFontSize(8)
+  // Wrap weekLabel if long
+  const wlLines = doc.splitTextToSize(weekLabel || '', 60)
+  doc.text(wlLines, 90, TY + 26)
 
-  // Países bar chart
-  card(doc, 97, 28, 100, 70, 'Visitantes por País', COLORS.cyan)
-  const paisesData = data.web.paises.map(p => ({
+  // Dispositivos card
+  panel(doc, 156, TY, 133, ROW1_H)
+  sectionBar(doc, 156, TY, 133, 'Dispositivos', C.cyan)
+  const dispData = [
+    { label: 'Smartphone', value: data.web.dispositivos.smartphone || 0 },
+    { label: 'Desktop',    value: data.web.dispositivos.desktop    || 0 },
+    { label: 'Tablet',     value: data.web.dispositivos.tablet     || 0 },
+    { label: 'Phablet',    value: data.web.dispositivos.phablet    || 0 },
+  ]
+  barChart(doc, 158, TY + 9, 129, ROW1_H - 11, dispData, C.cyan2)
+
+  // ── ROW 2: Países + Fuentes
+  panel(doc, 8, ROW2_Y, 136, ROW2_H)
+  sectionBar(doc, 8, ROW2_Y, 136, 'Visitantes por País (%)', C.cyan)
+  const paisData = data.web.paises.map(p => ({
     label: p.nombre,
     value: p.porcentaje ?? p.valor ?? 0
   }))
-  barChart(doc, 99, 36, 96, 58, paisesData, COLORS.cyan)
+  barChart(doc, 10, ROW2_Y + 9, 132, ROW2_H - 11, paisData, C.cyan)
 
-  // Fuentes bar chart
-  card(doc, 8, 75, 85, 60, 'Fuentes de Tráfico', COLORS.cyan)
+  panel(doc, 148, ROW2_Y, 141, ROW2_H)
+  sectionBar(doc, 148, ROW2_Y, 141, 'Fuentes de Tráfico', C.cyan)
   const fuentesData = data.web.fuentes.map(f => ({ label: f.nombre, value: f.valor || 0 }))
-  barChart(doc, 10, 83, 81, 48, fuentesData, COLORS.cyan2)
+  barChart(doc, 150, ROW2_Y + 9, 137, ROW2_H - 11, fuentesData, C.cyan2)
 
-  // Dispositivos
-  card(doc, 97, 100, 100, 35, 'Dispositivos', COLORS.cyan)
-  const dispData = [
-    { label: 'Smartphone', value: data.web.dispositivos.smartphone || 0 },
-    { label: 'Desktop', value: data.web.dispositivos.desktop || 0 },
-    { label: 'Tablet', value: data.web.dispositivos.tablet || 0 },
-    { label: 'Phablet', value: data.web.dispositivos.phablet || 0 },
-  ]
-  barChart(doc, 99, 108, 96, 23, dispData, COLORS.cyan2)
+  // ── ROW 3: Páginas visitadas
+  panel(doc, 8, ROW3_Y, 281, ROW3_H)
+  sectionBar(doc, 8, ROW3_Y, 281, 'Páginas más Visitadas', C.magenta)
+  const pagData = data.web.paginasVisitadas.map(p => ({ label: p.nombre, value: p.visitas || 0 }))
+  hBarChart(doc, 9, ROW3_Y + 8, 279, ROW3_H - 8, pagData, C.magenta)
 
-  // Páginas más visitadas
-  card(doc, 8, 138, 189, 64, 'Páginas más Visitadas', COLORS.magenta)
-  const paginasData = data.web.paginasVisitadas.map(p => ({ label: p.nombre, value: p.visitas || 0 }))
-  hBarChart(doc, 10, 146, 185, 50, paginasData, COLORS.magenta)
-
-  // Footer
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.text('asemafor.cl', W - 16, H - 4, { align: 'right' })
+  pageFooter(doc, 'asemafor.cl', 'WEB ANALYTICS', 2, 7)
 }
 
+// ─── ASEMAFOR IG ──────────────────────────────────────────────────────────────
 export function buildAsemaforIGPage(doc, data, weekLabel) {
   bgPage(doc)
-  header(doc, 'ASEMAFOR', COLORS.cyan, weekLabel)
+  pageHeader(doc, 'Asemafor', C.cyan, weekLabel, 'INSTAGRAM ANALYTICS')
 
   const ig = data.instagram
+  const TY = 30
+  const KPI_H = 46
+  const KPI_W = (281 - 8) / 3  // ≈ 91mm each
 
-  // Visualizaciones
-  card(doc, 8, 28, 88, 44, 'Visualizaciones Instagram', COLORS.magenta)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.visualizaciones || 0), 52, 51, { align: 'center' })
-  vsChip(doc, 14, 58, ig.visualizaciones || 0, ig.visualizacionesSP || 0)
+  // ── KPI Row
+  kpiCard(doc, 8,                  TY, KPI_W, KPI_H, 'Visualizaciones',    ig.visualizaciones,    ig.visualizacionesSP,    C.magenta)
+  kpiCard(doc, 8 + KPI_W + 4,      TY, KPI_W, KPI_H, 'Cuentas Alcanzadas', ig.cuentasAlcanzadas,  ig.cuentasAlcanzadasSP,  C.magenta)
+  kpiCard(doc, 8 + (KPI_W + 4) * 2, TY, KPI_W, KPI_H, 'Interacciones',    ig.interacciones,      ig.interaccionesSP,      C.magenta)
 
-  // Cuentas alcanzadas
-  card(doc, 100, 28, 88, 44, 'Cuentas Alcanzadas', COLORS.magenta)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.cuentasAlcanzadas || 0), 144, 51, { align: 'center' })
-  vsChip(doc, 106, 58, ig.cuentasAlcanzadas || 0, ig.cuentasAlcanzadasSP || 0)
+  // ── Middle row
+  const ROW2_Y = TY + KPI_H + 5
+  const ROW2_H = 54
 
-  // Interacciones
-  card(doc, 192, 28, 97, 44, 'Interacciones', COLORS.magenta)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.interacciones || 0), 240, 51, { align: 'center' })
-  vsChip(doc, 198, 58, ig.interacciones || 0, ig.interaccionesSP || 0)
-
-  // Distribución seguidores / no seguidores
-  card(doc, 8, 76, 88, 55, 'Audiencia', COLORS.magenta)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Seguidores: ${ig.seguidoresPct || 0}%`, 16, 90)
-  doc.text(`No seguidores: ${ig.noSeguidoresPct || 0}%`, 16, 100)
-  doc.setFontSize(8)
-  setTxt(doc, COLORS.muted)
-  doc.text(`Seguidores: ${ig.seguidores || 0} vs sp ${ig.seguidoresSP || 0}`, 16, 118)
+  // Audiencia
+  panel(doc, 8, ROW2_Y, 90, ROW2_H)
+  sectionBar(doc, 8, ROW2_Y, 90, 'Audiencia', C.magenta)
+  const audItems = [
+    { label: 'Seguidores',     pct: ig.seguidoresPct    || 0, val: ig.seguidores    || 0, prev: ig.seguidoresSP    || 0 },
+    { label: 'No seguidores',  pct: ig.noSeguidoresPct  || 0 },
+  ]
+  let ay = ROW2_Y + 13
+  audItems.forEach(item => {
+    txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6)
+    doc.text(item.label, 14, ay)
+    txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text(`${item.pct}%`, 14, ay + 8)
+    // Mini bar
+    const barFullW = 60
+    fill(doc, C.border); doc.rect(42, ay + 2, barFullW, 4, 'F')
+    fill(doc, C.magenta); doc.roundedRect(42, ay + 2, (item.pct / 100) * barFullW, 4, 1, 1, 'F')
+    if (item.prev !== undefined) {
+      txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5)
+      doc.text(`Total: ${item.val} (sp: ${item.prev})`, 14, ay + 17)
+    }
+    ay += 20
+  })
 
   // Alcance por tipo
-  card(doc, 100, 76, 88, 55, 'Alcance por Tipo', COLORS.magenta)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Publicaciones: ${ig.publicacionesPct || 0}%`, 108, 90)
-  doc.text(`Reel: ${ig.reelPct || 0}%`, 108, 100)
+  panel(doc, 102, ROW2_Y, 90, ROW2_H)
+  sectionBar(doc, 102, ROW2_Y, 90, 'Alcance por Tipo', C.magenta)
+  const alcData = [
+    { label: 'Publicaciones', value: ig.publicacionesPct || 0 },
+    { label: 'Reels',         value: ig.reelPct          || 0 },
+  ]
+  let alY = ROW2_Y + 13
+  alcData.forEach(item => {
+    txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6)
+    doc.text(item.label, 108, alY)
+    txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text(`${item.value}%`, 108, alY + 8)
+    const barFullW = 60
+    fill(doc, C.border); doc.rect(136, alY + 2, barFullW, 4, 'F')
+    fill(doc, C.cyan); doc.roundedRect(136, alY + 2, (item.value / 100) * barFullW, 4, 1, 1, 'F')
+    alY += 20
+  })
 
   // Visitas al perfil
-  card(doc, 192, 76, 97, 55, 'Visitas al Perfil', COLORS.magenta)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.visitasPerfil || 0), 240, 99, { align: 'center' })
-  setTxt(doc, COLORS.muted)
-  doc.setFontSize(8)
-  doc.text(`vs sp ${ig.visitasPerfilSP || 0}`, 240, 110, { align: 'center' })
+  panel(doc, 196, ROW2_Y, 93, ROW2_H)
+  sectionBar(doc, 196, ROW2_Y, 93, 'Visitas al Perfil', C.magenta)
+  const vp = Number(ig.visitasPerfil) || 0
+  const vpPrev = Number(ig.visitasPerfilSP) || 0
+  txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(26)
+  doc.text(vp.toLocaleString('es-CL'), 242, ROW2_Y + 35, { align: 'center' })
+  const vpDelta = vp - vpPrev
+  const vpColor = vpDelta >= 0 ? C.positive : C.negative
+  txt(doc, vpColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(7)
+  doc.text(`${vpDelta >= 0 ? '▲' : '▼'} ${vpDelta >= 0 ? '+' : ''}${vpDelta} vs sem. anterior`, 242, ROW2_Y + 44, { align: 'center' })
 
-  // Top posts
-  card(doc, 8, 135, 281, 65, 'Publicaciones Más Vistas', COLORS.magenta)
-  const postW = 87
-  ig.topPosts.forEach((post, i) => {
-    const px = 10 + i * (postW + 3)
-    setFill(doc, COLORS.surface2 || '#21252f')
-    doc.roundedRect(px, 143, postW, 50, 2, 2, 'F')
-    setTxt(doc, COLORS.text)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(16)
-    doc.text(String(post.vistas || 0), px + postW / 2, 165, { align: 'center' })
-    setTxt(doc, COLORS.muted)
-    doc.setFontSize(8)
-    doc.text(post.fecha || '-', px + postW / 2, 183, { align: 'center' })
-  })
+  // ── Top posts
+  const TP_Y = ROW2_Y + ROW2_H + 5
+  const TP_H = H - TP_Y - 14
+  panel(doc, 8, TP_Y, 281, TP_H)
+  sectionBar(doc, 8, TP_Y, 281, 'Publicaciones más Vistas', C.magenta)
+  topPostsRow(doc, 12, TP_Y + 9, 273, TP_H - 10, ig.topPosts || [], C.magenta)
 
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.text('INSTAGRAM · @asemafor', W - 16, H - 4, { align: 'right' })
+  pageFooter(doc, 'INSTAGRAM · @asemafor', 'IG ANALYTICS', 3, 7)
 }
 
+// ─── INNOVARIEGO WEB ──────────────────────────────────────────────────────────
 export function buildInnovariegoWebPage(doc, data, weekLabel) {
   bgPage(doc)
-  header(doc, 'INNOVARIEGO', COLORS.cyan2, weekLabel)
+  pageHeader(doc, 'Innovariego', C.cyan2, weekLabel, 'WEB ANALYTICS')
 
-  card(doc, 8, 28, 85, 44, 'Visitantes Web', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(22)
-  doc.text(String(data.web.visitantes || 0), 50, 52, { align: 'center' })
-  vsChip(doc, 14, 58, data.web.visitantes || 0, data.web.visitantesSP || 0)
+  const TY = 30
+  const ROW1_H = 44
+  const ROW2_Y = TY + ROW1_H + 4
+  const ROW2_H = 66
+  const ROW3_Y = ROW2_Y + ROW2_H + 4
+  const ROW3_H = H - ROW3_Y - 14
 
-  card(doc, 97, 28, 100, 70, 'Visitantes por País', COLORS.cyan2)
-  const paisesData = data.web.paises.map(p => ({ label: p.nombre, value: p.valor || 0 }))
-  barChart(doc, 99, 36, 96, 58, paisesData, COLORS.cyan2)
+  kpiCard(doc, 8, TY, 72, ROW1_H, 'Visitantes Web',
+    data.web.visitantes, data.web.visitantesSP, C.cyan2)
 
-  card(doc, 8, 75, 85, 60, 'Fuentes de Tráfico', COLORS.cyan2)
-  const fuentesData = data.web.fuentes.map(f => ({ label: f.nombre, value: f.valor || 0 }))
-  barChart(doc, 10, 83, 81, 48, fuentesData, COLORS.cyan2)
+  panel(doc, 84, TY, 68, ROW1_H)
+  sectionBar(doc, 84, TY, 68, 'Período', C.cyan2)
+  txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
+  const wlLines2 = doc.splitTextToSize(weekLabel || '', 60)
+  doc.text(wlLines2, 90, TY + 26)
 
-  card(doc, 97, 100, 100, 35, 'Dispositivos', COLORS.cyan2)
+  panel(doc, 156, TY, 133, ROW1_H)
+  sectionBar(doc, 156, TY, 133, 'Dispositivos', C.cyan2)
   const dispData = [
     { label: 'Smartphone', value: data.web.dispositivos.smartphone || 0 },
-    { label: 'Desktop', value: data.web.dispositivos.desktop || 0 },
-    { label: 'Tablet', value: data.web.dispositivos.tablet || 0 },
-    { label: 'Phablet', value: data.web.dispositivos.phablet || 0 },
+    { label: 'Desktop',    value: data.web.dispositivos.desktop    || 0 },
+    { label: 'Tablet',     value: data.web.dispositivos.tablet     || 0 },
+    { label: 'Phablet',    value: data.web.dispositivos.phablet    || 0 },
   ]
-  barChart(doc, 99, 108, 96, 23, dispData, COLORS.cyan)
+  barChart(doc, 158, TY + 9, 129, ROW1_H - 11, dispData, C.cyan2)
 
-  card(doc, 8, 138, 189, 64, 'Páginas más Visitadas', COLORS.cyan2)
-  const paginasData = data.web.paginasVisitadas.map(p => ({ label: p.nombre, value: p.visitas || 0 }))
-  hBarChart(doc, 10, 146, 185, 50, paginasData, COLORS.cyan2)
+  panel(doc, 8, ROW2_Y, 136, ROW2_H)
+  sectionBar(doc, 8, ROW2_Y, 136, 'Visitantes por País', C.cyan2)
+  const paisData = data.web.paises.map(p => ({ label: p.nombre, value: p.valor || 0 }))
+  barChart(doc, 10, ROW2_Y + 9, 132, ROW2_H - 11, paisData, C.cyan2)
 
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.text('innovariego.cl', W - 16, H - 4, { align: 'right' })
+  panel(doc, 148, ROW2_Y, 141, ROW2_H)
+  sectionBar(doc, 148, ROW2_Y, 141, 'Fuentes de Tráfico', C.cyan2)
+  const fuentesData = data.web.fuentes.map(f => ({ label: f.nombre, value: f.valor || 0 }))
+  barChart(doc, 150, ROW2_Y + 9, 137, ROW2_H - 11, fuentesData, C.cyan)
+
+  panel(doc, 8, ROW3_Y, 281, ROW3_H)
+  sectionBar(doc, 8, ROW3_Y, 281, 'Páginas más Visitadas', C.cyan2)
+  const pagData = data.web.paginasVisitadas.map(p => ({ label: p.nombre, value: p.visitas || 0 }))
+  hBarChart(doc, 9, ROW3_Y + 8, 279, ROW3_H - 8, pagData, C.cyan2)
+
+  pageFooter(doc, 'innovariego.cl', 'WEB ANALYTICS', 4, 7)
 }
 
+// ─── INNOVARIEGO IG ───────────────────────────────────────────────────────────
 export function buildInnovariegoIGPage(doc, data, weekLabel) {
   bgPage(doc)
-  header(doc, 'INNOVARIEGO', COLORS.cyan2, weekLabel)
+  pageHeader(doc, 'Innovariego', C.cyan2, weekLabel, 'INSTAGRAM ANALYTICS')
 
   const ig = data.instagram
+  const TY = 30
+  const KPI_H = 46
+  const KPI_W = (281 - 8) / 3
 
-  card(doc, 8, 28, 88, 44, 'Visualizaciones Instagram', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.visualizaciones || 0), 52, 51, { align: 'center' })
-  vsChip(doc, 14, 58, ig.visualizaciones || 0, ig.visualizacionesSP || 0)
+  kpiCard(doc, 8,                   TY, KPI_W, KPI_H, 'Visualizaciones',    ig.visualizaciones,   ig.visualizacionesSP,   C.cyan2)
+  kpiCard(doc, 8 + KPI_W + 4,       TY, KPI_W, KPI_H, 'Cuentas Alcanzadas', ig.cuentasAlcanzadas, ig.cuentasAlcanzadasSP, C.cyan2)
+  kpiCard(doc, 8 + (KPI_W + 4) * 2, TY, KPI_W, KPI_H, 'Interacciones',      ig.interacciones,     ig.interaccionesSP,     C.cyan2)
 
-  card(doc, 100, 28, 88, 44, 'Cuentas Alcanzadas', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.cuentasAlcanzadas || 0), 144, 51, { align: 'center' })
-  vsChip(doc, 106, 58, ig.cuentasAlcanzadas || 0, ig.cuentasAlcanzadasSP || 0)
+  const ROW2_Y = TY + KPI_H + 5
+  const ROW2_H = 54
 
-  card(doc, 192, 28, 97, 44, 'Interacciones', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.interacciones || 0), 240, 51, { align: 'center' })
-  vsChip(doc, 198, 58, ig.interacciones || 0, ig.interaccionesSP || 0)
-
-  card(doc, 8, 76, 88, 55, 'Audiencia', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Seguidores: ${ig.seguidoresPct || 0}%`, 16, 90)
-  doc.text(`No seguidores: ${ig.noSeguidoresPct || 0}%`, 16, 100)
-  setTxt(doc, COLORS.muted)
-  doc.setFontSize(8)
-  doc.text(`Total: ${ig.seguidores || 0} vs sp ${ig.seguidoresSP || 0}`, 16, 118)
-
-  card(doc, 100, 76, 88, 55, 'Alcance por Tipo', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Publicaciones: ${ig.publicacionesPct || 0}%`, 108, 90)
-  doc.text(`Reel: ${ig.reelPct || 0}%`, 108, 100)
-
-  card(doc, 192, 76, 97, 55, 'Visitas al Perfil', COLORS.cyan2)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.visitasPerfil || 0), 240, 99, { align: 'center' })
-  setTxt(doc, COLORS.muted)
-  doc.setFontSize(8)
-  doc.text(`vs sp ${ig.visitasPerfilSP || 0}`, 240, 110, { align: 'center' })
-
-  card(doc, 8, 135, 281, 65, 'Publicaciones Más Vistas', COLORS.cyan2)
-  const postW = 87
-  ig.topPosts.forEach((post, i) => {
-    const px = 10 + i * (postW + 3)
-    setFill(doc, '#21252f')
-    doc.roundedRect(px, 143, postW, 50, 2, 2, 'F')
-    setTxt(doc, COLORS.text)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(16)
-    doc.text(String(post.vistas || 0), px + postW / 2, 165, { align: 'center' })
-    setTxt(doc, COLORS.muted)
-    doc.setFontSize(8)
-    doc.text(post.fecha || '-', px + postW / 2, 183, { align: 'center' })
+  panel(doc, 8, ROW2_Y, 90, ROW2_H)
+  sectionBar(doc, 8, ROW2_Y, 90, 'Audiencia', C.cyan2)
+  let ay = ROW2_Y + 13
+  const audItems = [
+    { label: 'Seguidores',    pct: ig.seguidoresPct   || 0, val: ig.seguidores || 0, prev: ig.seguidoresSP || 0 },
+    { label: 'No seguidores', pct: ig.noSeguidoresPct || 0 },
+  ]
+  audItems.forEach(item => {
+    txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6)
+    doc.text(item.label, 14, ay)
+    txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text(`${item.pct}%`, 14, ay + 8)
+    fill(doc, C.border); doc.rect(42, ay + 2, 50, 4, 'F')
+    fill(doc, C.cyan2); doc.roundedRect(42, ay + 2, (item.pct / 100) * 50, 4, 1, 1, 'F')
+    if (item.prev !== undefined) {
+      txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5)
+      doc.text(`Total: ${item.val} (sp: ${item.prev})`, 14, ay + 17)
+    }
+    ay += 20
   })
 
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.text('INSTAGRAM · @innovariego', W - 16, H - 4, { align: 'right' })
+  panel(doc, 102, ROW2_Y, 90, ROW2_H)
+  sectionBar(doc, 102, ROW2_Y, 90, 'Alcance por Tipo', C.cyan2)
+  let alY = ROW2_Y + 13
+  const alcData = [
+    { label: 'Publicaciones', value: ig.publicacionesPct || 0 },
+    { label: 'Reels',         value: ig.reelPct          || 0 },
+  ]
+  alcData.forEach(item => {
+    txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6)
+    doc.text(item.label, 108, alY)
+    txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text(`${item.value}%`, 108, alY + 8)
+    fill(doc, C.border); doc.rect(136, alY + 2, 50, 4, 'F')
+    fill(doc, C.cyan); doc.roundedRect(136, alY + 2, (item.value / 100) * 50, 4, 1, 1, 'F')
+    alY += 20
+  })
+
+  panel(doc, 196, ROW2_Y, 93, ROW2_H)
+  sectionBar(doc, 196, ROW2_Y, 93, 'Visitas al Perfil', C.cyan2)
+  const vp = Number(ig.visitasPerfil) || 0
+  const vpPrev = Number(ig.visitasPerfilSP) || 0
+  txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(26)
+  doc.text(vp.toLocaleString('es-CL'), 242, ROW2_Y + 35, { align: 'center' })
+  const vpDelta = vp - vpPrev
+  const vpColor = vpDelta >= 0 ? C.positive : C.negative
+  txt(doc, vpColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(7)
+  doc.text(`${vpDelta >= 0 ? '▲' : '▼'} ${vpDelta >= 0 ? '+' : ''}${vpDelta} vs sem. anterior`, 242, ROW2_Y + 44, { align: 'center' })
+
+  const TP_Y = ROW2_Y + ROW2_H + 5
+  const TP_H = H - TP_Y - 14
+  panel(doc, 8, TP_Y, 281, TP_H)
+  sectionBar(doc, 8, TP_Y, 281, 'Publicaciones más Vistas', C.cyan2)
+  topPostsRow(doc, 12, TP_Y + 9, 273, TP_H - 10, ig.topPosts || [], C.cyan2)
+
+  pageFooter(doc, 'INSTAGRAM · @innovariego', 'IG ANALYTICS', 5, 7)
 }
 
+// ─── ECONEGOCIOS IG ───────────────────────────────────────────────────────────
 export function buildEconegociosIGPage(doc, data, weekLabel) {
   bgPage(doc)
-  header(doc, 'ECONEGOCIOS', COLORS.green, weekLabel)
+  pageHeader(doc, 'Econegocios', C.green, weekLabel, 'INSTAGRAM ANALYTICS')
 
   const ig = data.instagram
+  const TY = 30
+  const KPI_H = 46
+  const KPI_W = (281 - 8) / 3
 
-  card(doc, 8, 28, 88, 44, 'Visualizaciones Instagram', COLORS.green)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.visualizaciones || 0), 52, 51, { align: 'center' })
-  vsChip(doc, 14, 58, ig.visualizaciones || 0, ig.visualizacionesSP || 0)
+  kpiCard(doc, 8,                   TY, KPI_W, KPI_H, 'Visualizaciones',    ig.visualizaciones,  ig.visualizacionesSP,  C.green)
+  kpiCard(doc, 8 + KPI_W + 4,       TY, KPI_W, KPI_H, 'Interacciones',      ig.interacciones,    ig.interaccionesSP,    C.green)
+  kpiCard(doc, 8 + (KPI_W + 4) * 2, TY, KPI_W, KPI_H, 'Cuentas Alcanzadas', ig.cuentasAlcanzadas, 0,                   C.green)
 
-  card(doc, 100, 28, 88, 44, 'Interacciones', COLORS.green)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.interacciones || 0), 144, 51, { align: 'center' })
-  vsChip(doc, 106, 58, ig.interacciones || 0, ig.interaccionesSP || 0)
+  const ROW2_Y = TY + KPI_H + 5
+  const ROW2_H = 54
 
-  card(doc, 192, 28, 97, 44, 'Cuentas Alcanzadas', COLORS.green)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.text(String(ig.cuentasAlcanzadas || 0), 240, 51, { align: 'center' })
-
-  card(doc, 8, 76, 88, 55, 'Audiencia', COLORS.green)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Seguidores: ${ig.seguidoresPct || 0}%`, 16, 90)
-  doc.text(`No seguidores: ${ig.noSeguidoresPct || 0}%`, 16, 100)
-
-  card(doc, 100, 76, 88, 55, 'Alcance por Tipo', COLORS.green)
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Publicaciones: ${ig.publicacionesPct || 0}%`, 108, 90)
-
-  card(doc, 8, 135, 281, 65, 'Publicaciones Más Vistas', COLORS.green)
-  const postW = 87
-  ig.topPosts.forEach((post, i) => {
-    const px = 10 + i * (postW + 3)
-    setFill(doc, '#21252f')
-    doc.roundedRect(px, 143, postW, 50, 2, 2, 'F')
-    setTxt(doc, COLORS.text)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(16)
-    doc.text(String(post.vistas || 0), px + postW / 2, 165, { align: 'center' })
-    setTxt(doc, COLORS.muted)
-    doc.setFontSize(8)
-    doc.text(post.fecha || '-', px + postW / 2, 183, { align: 'center' })
+  panel(doc, 8, ROW2_Y, 90, ROW2_H)
+  sectionBar(doc, 8, ROW2_Y, 90, 'Audiencia', C.green)
+  let ay = ROW2_Y + 13
+  const audItems = [
+    { label: 'Seguidores',    pct: ig.seguidoresPct   || 0 },
+    { label: 'No seguidores', pct: ig.noSeguidoresPct || 0 },
+  ]
+  audItems.forEach(item => {
+    txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6)
+    doc.text(item.label, 14, ay)
+    txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text(`${item.pct}%`, 14, ay + 8)
+    fill(doc, C.border); doc.rect(42, ay + 2, 50, 4, 'F')
+    fill(doc, C.green); doc.roundedRect(42, ay + 2, (item.pct / 100) * 50, 4, 1, 1, 'F')
+    ay += 20
   })
 
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.text('INSTAGRAM · @econegocios', W - 16, H - 4, { align: 'right' })
+  panel(doc, 102, ROW2_Y, 90, ROW2_H)
+  sectionBar(doc, 102, ROW2_Y, 90, 'Alcance por Tipo', C.green)
+  txt(doc, C.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6)
+  doc.text('Publicaciones', 108, ROW2_Y + 13)
+  txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+  doc.text(`${ig.publicacionesPct || 0}%`, 108, ROW2_Y + 21)
+  fill(doc, C.border); doc.rect(136, ROW2_Y + 15, 50, 4, 'F')
+  fill(doc, C.green); doc.roundedRect(136, ROW2_Y + 15, ((ig.publicacionesPct || 0) / 100) * 50, 4, 1, 1, 'F')
+
+  panel(doc, 196, ROW2_Y, 93, ROW2_H)
+  sectionBar(doc, 196, ROW2_Y, 93, 'Visitas al Perfil', C.green)
+  const vp = Number(ig.visitasPerfil) || 0
+  txt(doc, C.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(26)
+  doc.text(vp.toLocaleString('es-CL'), 242, ROW2_Y + 35, { align: 'center' })
+
+  const TP_Y = ROW2_Y + ROW2_H + 5
+  const TP_H = H - TP_Y - 14
+  panel(doc, 8, TP_Y, 281, TP_H)
+  sectionBar(doc, 8, TP_Y, 281, 'Publicaciones más Vistas', C.green)
+  topPostsRow(doc, 12, TP_Y + 9, 273, TP_H - 10, ig.topPosts || [], C.green)
+
+  pageFooter(doc, 'INSTAGRAM · @econegocios', 'IG ANALYTICS', 6, 7)
 }
 
-export function buildCoverPage(doc, weekLabel) {
-  bgPage(doc)
-
-  // Decorative background lines
-  setDraw(doc, COLORS.border)
-  doc.setLineWidth(0.2)
-  for (let i = 0; i < 20; i++) {
-    doc.line(0, i * 12, W, i * 12)
-  }
-
-  // Center block
-  setFill(doc, COLORS.surface)
-  doc.roundedRect(W / 2 - 80, H / 2 - 40, 160, 80, 6, 6, 'F')
-
-  setTxt(doc, COLORS.cyan)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
-  doc.text('ESTADÍSTICAS WEB Y REDES SOCIALES', W / 2, H / 2 - 22, { align: 'center' })
-
-  setTxt(doc, COLORS.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(22)
-  doc.text('REPORTE SEMANAL', W / 2, H / 2 - 5, { align: 'center' })
-
-  setTxt(doc, COLORS.muted)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.text(weekLabel || '', W / 2, H / 2 + 10, { align: 'center' })
-
-  setDraw(doc, COLORS.border)
-  doc.setLineWidth(0.5)
-  doc.line(W / 2 - 40, H / 2 + 16, W / 2 + 40, H / 2 + 16)
-
-  setTxt(doc, COLORS.muted)
-  doc.setFontSize(8)
-  doc.text('Asemafor · Innovariego · Econegocios', W / 2, H / 2 + 26, { align: 'center' })
-}
-
+// ─── MAIN ENTRY ───────────────────────────────────────────────────────────────
 export async function generatePDF(stats) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
-  const weekLabel = stats.semana || `${stats.fechaInicio || ''} - ${stats.fechaFin || ''}`
+  const weekLabel = stats.semana || `${stats.fechaInicio || ''} – ${stats.fechaFin || ''}`
 
-  // Cover
   buildCoverPage(doc, weekLabel)
 
-  // Asemafor Web
-  doc.addPage()
-  buildAsemaforWebPage(doc, stats.asemafor, weekLabel)
+  doc.addPage(); buildAsemaforWebPage(doc, stats.asemafor, weekLabel)
+  doc.addPage(); buildAsemaforIGPage(doc, stats.asemafor, weekLabel)
+  doc.addPage(); buildInnovariegoWebPage(doc, stats.innovariego, weekLabel)
+  doc.addPage(); buildInnovariegoIGPage(doc, stats.innovariego, weekLabel)
+  doc.addPage(); buildEconegociosIGPage(doc, stats.econegocios, weekLabel)
 
-  // Asemafor IG
-  doc.addPage()
-  buildAsemaforIGPage(doc, stats.asemafor, weekLabel)
-
-  // Innovariego Web
-  doc.addPage()
-  buildInnovariegoWebPage(doc, stats.innovariego, weekLabel)
-
-  // Innovariego IG
-  doc.addPage()
-  buildInnovariegoIGPage(doc, stats.innovariego, weekLabel)
-
-  // Econegocios IG
-  doc.addPage()
-  buildEconegociosIGPage(doc, stats.econegocios, weekLabel)
-
-  const fileName = `estadisticas-${(weekLabel || 'semana').replace(/\s+/g, '-').toLowerCase()}.pdf`
+  const fileName = `estadisticas-${(weekLabel || 'semana').replace(/[\s/\\]/g, '-').toLowerCase()}.pdf`
   doc.save(fileName)
 }
